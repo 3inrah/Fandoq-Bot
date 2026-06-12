@@ -104,10 +104,35 @@ def handle_answer(call):
     # ۲. حذف دکمه‌ها و فرستادن سوال بعدی (فقط برای آن گروه)
     bot.edit_message_reply_markup(chat_id, call.message.message_id, reply_markup=None)
     send_question(chat_id)
+
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
+
+@bot.message_handler(commands=['start'])
+def send_welcome(message):
+    # ساخت لینک "افزودن به گروه"
+    # جای "YOUR_BOT_USERNAME" نام کاربری رباتت (بدون @) را بگذار
+    bot_username = "YOUR_BOT_USERNAME" 
+    add_link = f"https://t.me/{bot_username}?startgroup=true"
     
-@bot.message_handler(commands=['start', 'quiz'])
+    markup = InlineKeyboardMarkup()
+    add_button = InlineKeyboardButton("➕ افزودن به گروه", url=add_link)
+    markup.add(add_button)
+    
+    text = (
+        "سلام! به ربات کوئیز فندق خوش آمدی 🎮\n\n"
+        "این ربات برای بازی‌های گروهی طراحی شده است.\n"
+        "برای شروع بازی، کافیست من را به گروه خود اضافه کنید و دستور /quiz را بنویسید.\n\n"
+        "با زدن دکمه زیر، ربات را به گروهتان اضافه کنید:"
+    )
+    
+    bot.reply_to(message, text, reply_markup=markup)
+    
+@bot.message_handler(commands=['quiz']) 
 def start_game(message):
-    send_question(message.chat.id)
+    if message.chat.type in ['group', 'supergroup']:
+        send_question(message.chat.id)
+    else:
+        bot.reply_to(message, "من فقط در گروه‌ها بازی می‌کنم! برای افزودن به گروه از /start استفاده کن.")
 
 # تابع رده‌بندی گروهی که اضافه کردیم:
 @bot.message_handler(commands=['rank'])
