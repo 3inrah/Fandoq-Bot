@@ -19,7 +19,7 @@ def keep_alive():
     t = threading.Thread(target=run_server)
     t.start()
 
-TOKEN = '8987719269:AAGXwnmftbLA0evqHvjd32A7ktkmFbA5Uz4'
+TOKEN = '8987719269:AAGwq_58KYATo9n6AYjIElYGwYUUd3b0Tso'
 bot = telebot.TeleBot(TOKEN)
 
 def load_questions():
