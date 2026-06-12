@@ -116,7 +116,7 @@ def send_welcome(message):
         bot.reply_to(message, text)
     else:
         # پیامِ مخصوصِ پی‌وی (با همان دکمه‌ی افزودن به گروه)
-        bot_username = "YOUR_BOT_USERNAME" # آیدی رباتت را اینجا بنویس
+        bot_username = "FandoqQuizBot" # آیدی رباتت را اینجا بنویس
         add_link = f"https://t.me/{bot_username}?startgroup=true"
         
         markup = InlineKeyboardMarkup()
