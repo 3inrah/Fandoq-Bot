@@ -159,7 +159,9 @@ def finish_game(chat_id):
     else:
         text = "🏁 بازی تمام شد!"
         
-    bot.send_message(chat_id, text)
+   bot.send_message(chat_id, text)
+    
+    c.execute("DELETE FROM scores WHERE chat_id=?", (chat_id,))
     c.execute("DELETE FROM groups WHERE chat_id=?", (chat_id,))
     conn.commit()
     conn.close()
