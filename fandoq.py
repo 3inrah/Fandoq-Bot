@@ -29,16 +29,37 @@ init_db()
 
 # ارسال سوال
 def send_question(chat_id):
-    conn = sqlite3.connect('quiz_bot.db')
-    c = conn.cursor()
-    c.execute("SELECT current_question_index FROM groups WHERE chat_id=?", (chat_id,))
-    row = c.fetchone()
-    current_idx = (row[0] + 1) if row else 1
-    
-    if current_idx > 10:
-        finish_game(chat_id)
+    try:
+        conn = sqlite3.connect('quiz_bot.db')
+        c = conn.cursor()
+        c.execute("SELECT current_question_index FROM groups WHERE chat_id=?", (chat_id,))
+        row = c.fetchone()
+        current_idx = (row[0] + 1) if row else 1
+        
+        if current_idx > 10:
+            finish_game(chat_id)
+            conn.close()
+            return
+
+        c.execute("INSERT OR REPLACE INTO groups (chat_id, current_question_index) VALUES (?, ?)", (chat_id, current_idx))
+        conn.commit()
         conn.close()
-        return
+
+        # تستِ بارگذاری سوالات
+        if not QUESTIONS:
+            bot.send_message(chat_id, "⚠️ ای وای! فایلی که سوالات توش هست (questions.json) خالیه یا پیدا نمیشه.")
+            return
+
+        q_data = random.choice(QUESTIONS)
+        markup = InlineKeyboardMarkup()
+        for i, option in enumerate(q_data['options']):
+            markup.add(InlineKeyboardButton(option, callback_data=f"ans_{i}_{q_data['answer']}"))
+        
+        msg = bot.send_message(chat_id, f"❓ سوال {current_idx} از ۱۰:\n{q_data['question']}", reply_markup=markup)
+        threading.Timer(15, lambda: timeout_handler(chat_id, msg.message_id)).start()
+        
+    except Exception as e:
+        bot.send_message(chat_id, f"❌ یه خطای فنی رخ داد: {str(e)}")
 
     c.execute("INSERT OR REPLACE INTO groups (chat_id, current_question_index) VALUES (?, ?)", (chat_id, current_idx))
     conn.commit()
