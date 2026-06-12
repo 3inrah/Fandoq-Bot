@@ -115,18 +115,30 @@ def timeout_handler(chat_id, message_id, q_index):
     c = conn.cursor()
     c.execute("SELECT current_question_index FROM groups WHERE chat_id=?", (chat_id,))
     row = c.fetchone()
-    conn.close()
     
     if row and row[0] == q_index:
-        try: 
-            bot.edit_message_reply_markup(chat_id, message_id, reply_markup=None) 
-        except: 
-            pass
-        send_question(chat_id)
+        c.execute("UPDATE q_messages SET message_id = -message_id WHERE chat_id=? AND message_id=?", (chat_id, message_id))
+        if c.rowcount > 0:
+            conn.commit()
+            try: bot.edit_message_reply_markup(chat_id, message_id, reply_markup=None) 
+            except: pass
+            send_question(chat_id)
+            
+    conn.close()
 
 def send_question(chat_id):
     conn = sqlite3.connect('quiz_bot2.db', check_same_thread=False)
     c = conn.cursor()
+
+    # اینجا با دستور abs() علامت منفی قفل رو برمی‌داریم تا پیام بتونه پاک بشه
+    c.execute("SELECT message_id FROM q_messages WHERE chat_id=?", (chat_id,))
+    for row in c.fetchall():
+        try:
+            bot.delete_message(chat_id, abs(row[0]))
+        except:
+            pass
+    c.execute("DELETE FROM q_messages WHERE chat_id=?", (chat_id,))
+    conn.commit()
 
     c.execute("SELECT current_question_index FROM groups WHERE chat_id=?", (chat_id,))
     row = c.fetchone()
@@ -138,21 +150,7 @@ def send_question(chat_id):
         finish_game(chat_id)
         return
 
-    c.execute("UPDATE groups SET current_question_index=? WHERE chat_id=? AND current_question_index=?", (new_idx, chat_id, current_idx))
-    
-    if c.rowcount == 0:
-        conn.close()
-        return
-        
-    conn.commit()
-
-    c.execute("SELECT message_id FROM q_messages WHERE chat_id=?", (chat_id,))
-    for row in c.fetchall():
-        try:
-            bot.delete_message(chat_id, row[0])
-        except:
-            pass
-    c.execute("DELETE FROM q_messages WHERE chat_id=?", (chat_id,))
+    c.execute("UPDATE groups SET current_question_index=? WHERE chat_id=?", (new_idx, chat_id))
     conn.commit()
 
     c.execute("SELECT q_index FROM asked_questions WHERE chat_id=?", (chat_id,))
@@ -181,7 +179,6 @@ def send_question(chat_id):
     markup.add(*buttons)
 
     persian_idx = str(new_idx).translate(str.maketrans('0123456789', '۰۱۲۳۴۵۶۷۸۹'))
-
     text = f"❓ <b>سوال {persian_idx} از ۱۰</b>\n➖➖➖➖➖➖➖➖\n<i>{q_data['question']}</i>"
     
     msg = bot.send_message(chat_id, text, reply_markup=markup, parse_mode='HTML')
@@ -314,7 +311,6 @@ def handle_answer(call):
         bot.answer_callback_query(call.id, "❌ متاسفانه غلط بود!")
 
     conn.commit()
-    
     update_scoreboard(chat_id)
 
     c.execute("SELECT COUNT(*) FROM lobby WHERE chat_id=?", (chat_id,))
@@ -324,6 +320,12 @@ def handle_answer(call):
     answered_players = c.fetchone()[0]
 
     if answered_players >= total_players:
+        c.execute("UPDATE q_messages SET message_id = -message_id WHERE chat_id=? AND message_id=?", (chat_id, message_id))
+        if c.rowcount == 0:
+            conn.close()
+            return
+        conn.commit()
+        
         try: bot.edit_message_reply_markup(chat_id, message_id, reply_markup=None) 
         except: pass
         conn.close()
