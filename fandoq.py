@@ -50,18 +50,20 @@ def update_user(user_id, score, current_q):
 # ==========================================
 # ۳. منطق ارسال سوال
 # ==========================================
+
 def send_question(user_id, message_id=None):
-    # انتخاب یک سوال کاملا رندوم از لیست QUESTIONS
     q_data = random.choice(QUESTIONS)
     
     markup = InlineKeyboardMarkup()
     buttons = []
-    # پیدا کردن ایندکس جواب درست برای callback
+    
+    # اینجا شماره سوال صحیح را به عنوان یک "کلید" در داده‌های دکمه قرار می‌دهیم
+    # فرمت جدید: ans_گزینه_ایندکس_سوال_درست
     correct_idx = q_data["correct"]
     
     for i, option in enumerate(q_data["options"]):
-        is_correct = "" if i == q_data["correct"] else "0"
-        callback_data = f"ans_{is_correct}"
+        # به دکمه می‌گوییم: اگر روی من کلیک شد، بگو گزینه i انتخاب شده و جواب درست گزینه correct_idx است
+        callback_data = f"ans_{i}_{correct_idx}"
         buttons.append(InlineKeyboardButton(option, callback_data=callback_data))
     
     markup.add(buttons[0], buttons[1])
@@ -74,26 +76,23 @@ def send_question(user_id, message_id=None):
     else:
         bot.send_message(user_id, text, reply_markup=markup)
 
-# ==========================================
-# ۴. پردازش جواب کاربر
-# ==========================================
 @bot.callback_query_handler(func=lambda call: call.data.startswith('ans_'))
 def handle_answer(call):
-    # دریافت وضعیت از دکمه (ans_1 یعنی درست، ans_0 یعنی غلط)
-    is_correct = call.data.split('_')[1]
+    # جدا کردن داده‌های دکمه
+    parts = call.data.split('_')
+    selected_idx = int(parts[1])
+    correct_idx = int(parts[2])
     
-    if is_correct == "1":
+    if selected_idx == correct_idx:
         bot.answer_callback_query(call.id, "✅ آفرین! درست بود.")
-        # اینجا امتیاز را هم اضافه کن (update_user)
+        # اینجا امتیازی که در دیتابیس داری رو هم می‌تونی آپدیت کنی
     else:
-        bot.answer_callback_query(call.id, "❌ اشتباه بود!")
+        bot.answer_callback_query(call.id, f"❌ اشتباه بود! جواب درست گزینه {correct_idx + 1} بود.")
     
-    # بعد از پاسخ، دکمه‌ها را حذف کن تا کاربر دوباره کلیک نکند
+    # حذف دکمه‌ها و فرستادن سوال بعدی
     bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=None)
-    
-    # ارسال سوال بعدی
     send_question(call.message.chat.id)
-
+    
 @bot.message_handler(commands=['start', 'quiz'])
 def start_game(message):
     send_question(message.chat.id)
