@@ -60,8 +60,8 @@ def send_question(user_id, message_id=None):
     correct_idx = q_data["correct"]
     
     for i, option in enumerate(q_data["options"]):
-        # اطلاعات دکمه: ans_گزینه_درست_انتخاب‌شده
-        callback_data = f"ans_{i}_{correct_idx}"
+        is_correct = "" if i == q_data["correct"] else "0"
+        callback_data = f"ans_{is_correct}"
         buttons.append(InlineKeyboardButton(option, callback_data=callback_data))
     
     markup.add(buttons[0], buttons[1])
@@ -79,23 +79,20 @@ def send_question(user_id, message_id=None):
 # ==========================================
 @bot.callback_query_handler(func=lambda call: call.data.startswith('ans_'))
 def handle_answer(call):
-    data_parts = call.data.split('_')
-    selected = int(data_parts[1])
-    correct = int(data_parts[2])
+    # دریافت وضعیت از دکمه (ans_1 یعنی درست، ans_0 یعنی غلط)
+    is_correct = call.data.split('_')[1]
     
-    user_id = call.message.chat.id
-    user = get_user(user_id)
-    score = user[0]
-    
-    if selected == correct:
-        score += 10
-        bot.answer_callback_query(call.id, "✅ درست بود!")
+    if is_correct == "1":
+        bot.answer_callback_query(call.id, "✅ آفرین! درست بود.")
+        # اینجا امتیاز را هم اضافه کن (update_user)
     else:
         bot.answer_callback_query(call.id, "❌ اشتباه بود!")
     
-    update_user(user_id, score, 0) # آپدیت امتیاز
-    # فرستادن سوال بعدی (ویرایش همان پیام قبلی)
-    send_question(user_id, call.message.message_id)
+    # بعد از پاسخ، دکمه‌ها را حذف کن تا کاربر دوباره کلیک نکند
+    bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=None)
+    
+    # ارسال سوال بعدی
+    send_question(call.message.chat.id)
 
 @bot.message_handler(commands=['start', 'quiz'])
 def start_game(message):
