@@ -6,7 +6,6 @@ import sqlite3
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 from flask import Flask
 
-# تنظیمات سرور برای Render
 app = Flask('')
 @app.route('/')
 def home():
@@ -37,49 +36,64 @@ def init_db():
              (chat_id INTEGER, user_id INTEGER, name TEXT, score INTEGER)''')
     c.execute('''CREATE TABLE IF NOT EXISTS lobby 
              (chat_id INTEGER, user_id INTEGER, name TEXT)''')
-    # دو جدول جدید برای ثبت جواب‌ها و پیام‌ها
-    c.execute('''CREATE TABLE IF NOT EXISTS round_answers 
-             (chat_id INTEGER, user_id INTEGER, q_index INTEGER)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS round_answers_v2 
+             (chat_id INTEGER, user_id INTEGER, q_index INTEGER, is_correct INTEGER)''')
     c.execute('''CREATE TABLE IF NOT EXISTS q_messages 
              (chat_id INTEGER, message_id INTEGER)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS asked_questions 
+             (chat_id INTEGER, q_index INTEGER)''')
     conn.commit()
     conn.close()
 
 init_db()
 
 def update_scoreboard(chat_id):
-    """این تابع جدول امتیازات زنده رو توی پیام اول آپدیت میکنه"""
     conn = sqlite3.connect('quiz_bot2.db', check_same_thread=False)
     c = conn.cursor()
-    c.execute("SELECT lobby_msg_id FROM groups WHERE chat_id=?", (chat_id,))
+    c.execute("SELECT lobby_msg_id, current_question_index FROM groups WHERE chat_id=?", (chat_id,))
     row = c.fetchone()
     if not row or not row[0]:
         conn.close()
         return
         
     lobby_msg_id = row[0]
+    current_q = row[1]
     
-    # گرفتن لیست همه بازیکنان و امتیازاتشون
     c.execute('''
-        SELECT lobby.name, COALESCE(scores.score, 0) as score 
+        SELECT lobby.user_id, lobby.name, COALESCE(scores.score, 0) as score 
         FROM lobby 
         LEFT JOIN scores ON lobby.chat_id = scores.chat_id AND lobby.user_id = scores.user_id 
         WHERE lobby.chat_id=? 
         ORDER BY score DESC
     ''', (chat_id,))
     players = c.fetchall()
-    conn.close()
     
-    text = "🏆 جدول زنده امتیازات:\n\n"
+    text = "🏆 <b>جدول زنده امتیازات:</b>\n➖➖➖➖➖➖➖➖\n"
     for i, p in enumerate(players, 1):
-        text += f"{i}. {p[0]}: {p[1]} امتیاز\n"
+        user_id = p[0]
+        name = p[1]
+        score = p[2]
+        
+        c.execute("SELECT q_index, is_correct FROM round_answers_v2 WHERE chat_id=? AND user_id=?", (chat_id, user_id))
+        answers = {r[0]: r[1] for r in c.fetchall()}
+        
+        bar = ""
+        for q in range(1, 11): 
+            if q in answers:
+                bar += "🟩" if answers[q] == 1 else "🟥"
+            elif q < current_q:
+                bar += "⬜️" 
+            else:
+                bar += "⬛️" 
+                
+        text += f"<b>{i}.</b> {name}: <code>{score}</code> امتیاز\n{bar}\n\n"
         
     try:
-        # آپدیت کردن همون پیام اولیه
-        bot.edit_message_text(text, chat_id, lobby_msg_id)
+        bot.edit_message_text(text, chat_id, lobby_msg_id, parse_mode='HTML')
     except:
-        pass # اگر تغییری نکرده باشه تلگرام ارور میده که نادیده می‌گیریم
-
+        pass
+    conn.close()
+        
 def get_user(user_id):
     conn = sqlite3.connect('quiz_bot2.db', check_same_thread=False)
     c = conn.cursor()
@@ -103,7 +117,6 @@ def timeout_handler(chat_id, message_id, q_index):
     row = c.fetchone()
     conn.close()
     
-    # چک می‌کنیم اگر بعد از ۱۵ ثانیه هنوز روی همین سوال بودیم، یعنی زمان تموم شده
     if row and row[0] == q_index:
         try: 
             bot.edit_message_reply_markup(chat_id, message_id, reply_markup=None) 
@@ -114,6 +127,16 @@ def timeout_handler(chat_id, message_id, q_index):
 def send_question(chat_id):
     conn = sqlite3.connect('quiz_bot2.db', check_same_thread=False)
     c = conn.cursor()
+
+    c.execute("SELECT message_id FROM q_messages WHERE chat_id=?", (chat_id,))
+    for row in c.fetchall():
+        try:
+            bot.delete_message(chat_id, row[0])
+        except:
+            pass
+    c.execute("DELETE FROM q_messages WHERE chat_id=?", (chat_id,))
+    conn.commit()
+
     c.execute("SELECT current_question_index FROM groups WHERE chat_id=?", (chat_id,))
     row = c.fetchone()
     
@@ -127,57 +150,107 @@ def send_question(chat_id):
     c.execute("INSERT OR REPLACE INTO groups (chat_id, current_question_index, lobby_msg_id) VALUES (?, ?, COALESCE((SELECT lobby_msg_id FROM groups WHERE chat_id=?), 0))", (chat_id, current_idx, chat_id))
     conn.commit()
 
-    q_data = random.choice(QUESTIONS)
-    markup = InlineKeyboardMarkup() 
-    for i, option in enumerate(q_data['options']): 
-        markup.add(InlineKeyboardButton(option, callback_data=f"ans_{i}_{q_data['correct']}"))
-
-    msg = bot.send_message(chat_id, f"❓ سوال {current_idx} از ۱۰:\n{q_data['question']}", reply_markup=markup)
+    c.execute("SELECT q_index FROM asked_questions WHERE chat_id=?", (chat_id,))
+    asked_indices = set(row[0] for row in c.fetchall())
     
-    # ذخیره آیدی پیامِ سوال تا آخر بازی بتونیم پاکش کنیم
+    all_indices = set(range(len(QUESTIONS)))
+    available_indices = list(all_indices - asked_indices)
+    
+    if not available_indices:
+        c.execute("DELETE FROM asked_questions WHERE chat_id=?", (chat_id,))
+        conn.commit()
+        available_indices = list(all_indices)
+    
+    chosen_index = random.choice(available_indices)
+    q_data = QUESTIONS[chosen_index]
+    
+    c.execute("INSERT INTO asked_questions (chat_id, q_index) VALUES (?, ?)", (chat_id, chosen_index))
+    conn.commit()
+
+    markup = InlineKeyboardMarkup(row_width=2) 
+    buttons = []
+    for i, option in enumerate(q_data['options']): 
+        buttons.append(InlineKeyboardButton(option, callback_data=f"ans_{i}_{q_data['correct']}"))
+    markup.add(*buttons)
+
+    persian_idx = str(current_idx).translate(str.maketrans('0123456789', '۰۱۲۳۴۵۶۷۸۹'))
+
+    text = f"❓ <b>سوال {persian_idx} از ۱۰</b>\n➖➖➖➖➖➖➖➖\n<i>{q_data['question']}</i>"
+    
+    msg = bot.send_message(chat_id, text, reply_markup=markup, parse_mode='HTML')
+    
     c.execute("INSERT INTO q_messages (chat_id, message_id) VALUES (?, ?)", (chat_id, msg.message_id))
     conn.commit()
     conn.close()
 
-    # روشن کردن تایمر ۱۵ ثانیه‌ای برای این سوال
     threading.Timer(15.0, timeout_handler, args=[chat_id, msg.message_id, current_idx]).start()
 
-@bot.message_handler(commands=['quiz']) 
-def start_game(message):
-    if message.chat.type in ['group', 'supergroup']:
-        chat_id = message.chat.id
-        host_id = message.from_user.id
-        host_name = message.from_user.first_name
-        
-        # اتصال به دیتابیس برای ثبت بازیکنان
-        conn = sqlite3.connect('quiz_bot2.db', check_same_thread=False)
-        c = conn.cursor()
-        
-        # پاک کردن لیست قبلی گروه تا بازی جدید تر و تمیز شروع بشه
-        c.execute("DELETE FROM lobby WHERE chat_id=?", (chat_id,))
-        # ثبت‌نام خودکارِ کسی که مسابقه رو ساخته
-        c.execute("INSERT INTO lobby (chat_id, user_id, name) VALUES (?, ?, ?)", (chat_id, host_id, host_name))
-        conn.commit()
-        conn.close()
-        
-        # ساختن متن و دکمه‌های شیشه‌ای
-        text = f"🎮 فراخوان بازی کوئیز فندق!\n\nکسانی که آماده هستن روی دکمه زیر کلیک کنن.\n\n👥 بازیکنان:\n۱. {host_name}"
-        
-        markup = InlineKeyboardMarkup()
-        markup.add(InlineKeyboardButton("✋ من هستم!", callback_data="join_lobby"))
-        # آیدی سازنده رو تو دکمه مخفی می‌کنیم تا فقط خودش بتونه بازی رو استارت بزنه
-        markup.add(InlineKeyboardButton("🚀 شروع مسابقه", callback_data=f"start_lobby_{host_id}"))
-        
-        bot.send_message(chat_id, text, reply_markup=markup)
-    else:
-        bot.reply_to(message, "من فقط در گروه‌ها بازی می‌کنم! برای افزودن به گروه از /start استفاده کن.")
+@bot.callback_query_handler(func=lambda call: call.data.startswith('ans_'))
+def handle_answer(call):
+    parts = call.data.split('_')
+    chat_id = call.message.chat.id
+    message_id = call.message.message_id
+    user_id = call.from_user.id
+    
+    conn = sqlite3.connect('quiz_bot2.db', check_same_thread=False)
+    c = conn.cursor()
 
-@bot.callback_query_handler(func=lambda call: call.data == 'join_lobby' or call.data.startswith('start_lobby_'))
+    c.execute("SELECT * FROM lobby WHERE chat_id=? AND user_id=?", (chat_id, user_id))
+    if not c.fetchone():
+        bot.answer_callback_query(call.id, "⛔️ شما تو بازی ثبت‌نام نکردی! تماشاچی باش.", show_alert=True)
+        conn.close()
+        return
+
+    c.execute("SELECT current_question_index FROM groups WHERE chat_id=?", (chat_id,))
+    current_q_idx_row = c.fetchone()
+    if not current_q_idx_row:
+        conn.close()
+        return
+    current_q_idx = current_q_idx_row[0]
+
+    # تغییر به جدول V2
+    c.execute("SELECT * FROM round_answers_v2 WHERE chat_id=? AND user_id=? AND q_index=?", (chat_id, user_id, current_q_idx))
+    if c.fetchone():
+        bot.answer_callback_query(call.id, "قبلاً جواب دادی! ⏳ صبر کن بقیه هم جواب بدن.")
+        conn.close()
+        return
+
+    is_correct = 1 if int(parts[1]) == int(parts[2]) else 0
+    c.execute("INSERT INTO round_answers_v2 (chat_id, user_id, q_index, is_correct) VALUES (?, ?, ?, ?)", (chat_id, user_id, current_q_idx, is_correct))
+
+    if is_correct:
+        bot.answer_callback_query(call.id, "✅ آفرین! درست بود (+۱۰ امتیاز)")
+        c.execute("SELECT score FROM scores WHERE chat_id=? AND user_id=?", (chat_id, user_id))
+        row = c.fetchone()
+        if row:
+            c.execute("UPDATE scores SET score=? WHERE chat_id=? AND user_id=?", (row[0] + 10, chat_id, user_id))
+        else:
+            c.execute("INSERT INTO scores (chat_id, user_id, name, score) VALUES (?, ?, ?, 10)", (chat_id, user_id, call.from_user.first_name))
+    else:
+        bot.answer_callback_query(call.id, "❌ متاسفانه غلط بود!")
+
+    conn.commit()
+    
+    update_scoreboard(chat_id)
+
+    c.execute("SELECT COUNT(*) FROM lobby WHERE chat_id=?", (chat_id,))
+    total_players = c.fetchone()[0]
+
+    c.execute("SELECT COUNT(*) FROM round_answers_v2 WHERE chat_id=? AND q_index=?", (chat_id, current_q_idx))
+    answered_players = c.fetchone()[0]
+
+    if answered_players >= total_players:
+        try: bot.edit_message_reply_markup(chat_id, message_id, reply_markup=None) 
+        except: pass
+        conn.close()
+        send_question(chat_id)
+    else:
+        conn.close()
+
 @bot.callback_query_handler(func=lambda call: call.data == 'join_lobby' or call.data.startswith('start_lobby_'))
 def lobby_actions(call):
     chat_id = call.message.chat.id
     
-    # اینجا دیتابیس حتماً باید نسخه 2 باشه
     conn = sqlite3.connect('quiz_bot2.db', check_same_thread=False)
     c = conn.cursor()
     
@@ -193,13 +266,12 @@ def lobby_actions(call):
                 
                 c.execute("SELECT name FROM lobby WHERE chat_id=?", (chat_id,))
                 players = c.fetchall()
-                text = "🎮 فراخوان بازی کوئیز فندق!\n\nکسانی که آماده هستن روی دکمه زیر کلیک کنن.\n\n👥 بازیکنان:\n"
-                for i, p in enumerate(players, 1):
-                    text += f"{i}. {p[0]}\n"
+                text = "🎮 <b>فراخوان بازی کوئیز فندق!</b>\n\nکسانی که آماده هستن روی دکمه زیر کلیک کنن.\n➖➖➖➖➖➖➖➖\n👥 <b>بازیکنان:</b>\n"
+            for i, p in enumerate(players, 1):
+                text += f"<b>{i}.</b> {p[0]}\n"
                 
-                # جلوگیری از گیر کردن دکمه در صورت کلیک همزمان دو نفر
                 try:
-                    bot.edit_message_text(text, chat_id, call.message.message_id, reply_markup=call.message.reply_markup)
+                    bot.edit_message_text(text, chat_id, call.message.message_id, reply_markup=call.message.reply_markup, parse_mode='HTML')
                 except:
                     pass
                     
@@ -233,7 +305,6 @@ def handle_answer(call):
     conn = sqlite3.connect('quiz_bot2.db', check_same_thread=False)
     c = conn.cursor()
 
-    # ۱. آیا ثبت نام کرده؟
     c.execute("SELECT * FROM lobby WHERE chat_id=? AND user_id=?", (chat_id, user_id))
     if not c.fetchone():
         bot.answer_callback_query(call.id, "⛔️ شما تو بازی ثبت‌نام نکردی! تماشاچی باش.", show_alert=True)
@@ -247,18 +318,17 @@ def handle_answer(call):
         return
     current_q_idx = current_q_idx_row[0]
 
-    # ۲. آیا قبلاً به این سوال جواب داده؟
-    c.execute("SELECT * FROM round_answers WHERE chat_id=? AND user_id=? AND q_index=?", (chat_id, user_id, current_q_idx))
+    # تغییر به جدول V2
+    c.execute("SELECT * FROM round_answers_v2 WHERE chat_id=? AND user_id=? AND q_index=?", (chat_id, user_id, current_q_idx))
     if c.fetchone():
         bot.answer_callback_query(call.id, "قبلاً جواب دادی! ⏳ صبر کن بقیه هم جواب بدن.")
         conn.close()
         return
 
-    # ۳. ثبت اینکه این شخص به این سوال جواب داد
-    c.execute("INSERT INTO round_answers (chat_id, user_id, q_index) VALUES (?, ?, ?)", (chat_id, user_id, current_q_idx))
+    is_correct = 1 if int(parts[1]) == int(parts[2]) else 0
+    c.execute("INSERT INTO round_answers_v2 (chat_id, user_id, q_index, is_correct) VALUES (?, ?, ?, ?)", (chat_id, user_id, current_q_idx, is_correct))
 
-    # ۴. بررسی جواب و نمایش پیام مخفی (فقط برای خود شخص)
-    if int(parts[1]) == int(parts[2]):
+    if is_correct:
         bot.answer_callback_query(call.id, "✅ آفرین! درست بود (+۱۰ امتیاز)")
         c.execute("SELECT score FROM scores WHERE chat_id=? AND user_id=?", (chat_id, user_id))
         row = c.fetchone()
@@ -271,22 +341,17 @@ def handle_answer(call):
 
     conn.commit()
     
-    # ۵. آپدیت جدول امتیازات زنده در پیام اول
     update_scoreboard(chat_id)
 
-    # ۶. بررسی اینکه آیا همه افراد لیست جواب داده‌اند؟
     c.execute("SELECT COUNT(*) FROM lobby WHERE chat_id=?", (chat_id,))
     total_players = c.fetchone()[0]
 
-    c.execute("SELECT COUNT(*) FROM round_answers WHERE chat_id=? AND q_index=?", (chat_id, current_q_idx))
+    c.execute("SELECT COUNT(*) FROM round_answers_v2 WHERE chat_id=? AND q_index=?", (chat_id, current_q_idx))
     answered_players = c.fetchone()[0]
 
     if answered_players >= total_players:
-        # اگر همه جواب داده باشند، دکمه‌های این سوال پاک می‌شود و بلافاصله می‌رود سوال بعدی
-        try: 
-            bot.edit_message_reply_markup(chat_id, message_id, reply_markup=None) 
-        except: 
-            pass
+        try: bot.edit_message_reply_markup(chat_id, message_id, reply_markup=None) 
+        except: pass
         conn.close()
         send_question(chat_id)
     else:
@@ -295,11 +360,10 @@ def handle_answer(call):
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     if message.chat.type in ['group', 'supergroup']:
-        # پیامِ مخصوصِ گروه
-        text = "سلام! من فندق هستم 🎮\nبرای شروع بازی کوئیز کافیست دستور /quiz را بفرستید."
-        bot.reply_to(message, text)
+        text = "سلام! من <b>فندق</b> هستم 🎮\nبرای شروع مسابقه کافیست دستور /quiz را بفرستید."
+        bot.reply_to(message, text, parse_mode='HTML')
     else:
-        bot_username = "FandoqQuizBot" # آیدی رباتت را اینجا بنویس
+        bot_username = bot.get_me().username
         add_link = f"https://t.me/{bot_username}?startgroup=true"
         
         markup = InlineKeyboardMarkup()
@@ -307,11 +371,11 @@ def send_welcome(message):
         markup.add(add_button)
         
         text = (
-            "سلام! به ربات کوئیز فندق خوش آمدی 🎮\n\n"
-            "این ربات برای بازی‌های گروهی طراحی شده است.\n"
+            "سلام! به ربات <b>کوئیز فندق</b> خوش آمدی 🎮\n➖➖➖➖➖➖➖➖\n"
+            "این ربات برای بازی‌های گروهی و رقابتی طراحی شده است.\n"
             "برای شروع، من را به گروه خود اضافه کنید."
         )
-        bot.reply_to(message, text, reply_markup=markup)
+        bot.reply_to(message, text, reply_markup=markup, parse_mode='HTML')
 
 @bot.message_handler(commands=['rank'])
 def show_rank(message):
@@ -323,19 +387,18 @@ def show_rank(message):
     conn.close()
     
     if not results:
-        bot.reply_to(message, "هنوز امتیازی در این گروه ثبت نشده است!")
+        bot.reply_to(message, "هنوز امتیازی در این گروه ثبت نشده است! 🤷‍♂️")
         return
         
-    text = "🏆 رده‌بندی ۵ نفر برتر این گروه:\n\n"
+    text = "🏆 <b>رده‌بندی ۵ نفر برتر این گروه:</b>\n➖➖➖➖➖➖➖➖\n"
     for rank, (name, score) in enumerate(results, 1):
-        text += f"{rank}. {name}: {score} امتیاز\n"
-    bot.reply_to(message, text)
+        text += f"<b>{rank}.</b> {name}: <code>{score}</code> امتیاز\n"
+    bot.reply_to(message, text, parse_mode='HTML')
 
 def finish_game(chat_id):
     conn = sqlite3.connect('quiz_bot2.db', check_same_thread=False)
     c = conn.cursor()
     
-    # ۱. پاک کردن تمام پیام‌های سوالات از گروه تا گروه شلوغ نشود
     c.execute("SELECT message_id FROM q_messages WHERE chat_id=?", (chat_id,))
     for row in c.fetchall():
         try:
@@ -343,7 +406,6 @@ def finish_game(chat_id):
         except:
             pass
             
-    # ۲. گرفتن لیست نهایی بازیکنان و محاسبه رتبه‌ها
     c.execute("SELECT lobby_msg_id FROM groups WHERE chat_id=?", (chat_id,))
     lobby_row = c.fetchone()
     
@@ -356,7 +418,6 @@ def finish_game(chat_id):
     ''', (chat_id,))
     players = c.fetchall()
     
-    # ساخت متن نهایی برای معرفی قهرمان‌ها
     text = "🏁 مسابقه به پایان رسید! جدول نهایی قهرمانان:\n\n"
     for i, p in enumerate(players, 1):
         if i == 1:
@@ -368,18 +429,16 @@ def finish_game(chat_id):
         else:
             text += f"🔹 {p[0]}: {p[1]} امتیاز\n"
             
-    # ویرایش همان پیام اول برای نمایش برندگان
     if lobby_row and lobby_row[0]:
         try:
             bot.edit_message_text(text, chat_id, lobby_row[0])
         except:
             bot.send_message(chat_id, text)
             
-    # ۳. پاکسازی نهایی دیتابیس برای اینکه در بازی‌های بعدی مشکلی پیش نیاید
     c.execute("DELETE FROM scores WHERE chat_id=?", (chat_id,))
     c.execute("DELETE FROM groups WHERE chat_id=?", (chat_id,))
     c.execute("DELETE FROM lobby WHERE chat_id=?", (chat_id,))
-    c.execute("DELETE FROM round_answers WHERE chat_id=?", (chat_id,))
+    c.execute("DELETE FROM round_answers_v2 WHERE chat_id=?", (chat_id,))
     c.execute("DELETE FROM q_messages WHERE chat_id=?", (chat_id,))
     conn.commit()
     conn.close()
