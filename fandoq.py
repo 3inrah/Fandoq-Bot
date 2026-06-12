@@ -110,8 +110,7 @@ from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     # ساخت لینک "افزودن به گروه"
-    # جای "YOUR_BOT_USERNAME" نام کاربری رباتت (بدون @) را بگذار
-    bot_username = "YOUR_BOT_USERNAME" 
+    bot_username = "FandoqQuizBot" 
     add_link = f"https://t.me/{bot_username}?startgroup=true"
     
     markup = InlineKeyboardMarkup()
