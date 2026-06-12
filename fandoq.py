@@ -24,8 +24,10 @@ QUESTIONS = load_questions()
 def init_db():
     conn = sqlite3.connect('quiz_bot.db')
     c = conn.cursor()
-    c.execute('''CREATE TABLE IF NOT EXISTS users
-                 (user_id INTEGER PRIMARY KEY, score INTEGER, current_q INTEGER)''')
+    # جدول کاربران و امتیازات گروهی
+    c.execute('''CREATE TABLE IF NOT EXISTS scores
+                 (chat_id INTEGER, user_id INTEGER, name TEXT, score INTEGER, 
+                  PRIMARY KEY (chat_id, user_id))''')
     conn.commit()
     conn.close()
 
@@ -78,24 +80,53 @@ def send_question(user_id, message_id=None):
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('ans_'))
 def handle_answer(call):
-    # جدا کردن داده‌های دکمه
+    # ۱. پردازش جواب
     parts = call.data.split('_')
-    selected_idx = int(parts[1])
-    correct_idx = int(parts[2])
+    selected = int(parts[1])
+    correct = int(parts[2])
     
-    if selected_idx == correct_idx:
-        bot.answer_callback_query(call.id, "✅ آفرین! درست بود.")
-        # اینجا امتیازی که در دیتابیس داری رو هم می‌تونی آپدیت کنی
+    chat_id = call.message.chat.id
+    user_id = call.from_user.id
+    user_name = call.from_user.first_name
+    
+    if selected == correct:
+        # ثبت یا آپدیت امتیاز در جدول scores
+        conn = sqlite3.connect('quiz_bot.db')
+        c = conn.cursor()
+        c.execute("INSERT OR REPLACE INTO scores (chat_id, user_id, name, score) VALUES (?, ?, ?, COALESCE((SELECT score FROM scores WHERE chat_id=? AND user_id=?), 0) + 10)", 
+                  (chat_id, user_id, user_name, chat_id, user_id))
+        conn.commit()
+        conn.close()
+        bot.answer_callback_query(call.id, "✅ درست بود! ۱۰ امتیاز گرفتی.")
     else:
-        bot.answer_callback_query(call.id, f"❌ اشتباه بود! جواب درست گزینه {correct_idx + 1} بود.")
+        bot.answer_callback_query(call.id, "❌ غلط بود!")
     
-    # حذف دکمه‌ها و فرستادن سوال بعدی
-    bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=None)
-    send_question(call.message.chat.id)
+    # ۲. حذف دکمه‌ها و فرستادن سوال بعدی (فقط برای آن گروه)
+    bot.edit_message_reply_markup(chat_id, call.message.message_id, reply_markup=None)
+    send_question(chat_id)
     
 @bot.message_handler(commands=['start', 'quiz'])
 def start_game(message):
     send_question(message.chat.id)
+
+# تابع رده‌بندی گروهی که اضافه کردیم:
+@bot.message_handler(commands=['rank'])
+def show_rank(message):
+    chat_id = message.chat.id
+    conn = sqlite3.connect('quiz_bot.db')
+    c = conn.cursor()
+    c.execute("SELECT name, score FROM scores WHERE chat_id=? ORDER BY score DESC LIMIT 5", (chat_id,))
+    results = c.fetchall()
+    conn.close()
+    
+    if not results:
+        bot.reply_to(message, "هنوز امتیازی در این گروه ثبت نشده است!")
+        return
+        
+    text = "🏆 رده‌بندی ۵ نفر برتر این گروه:\n\n"
+    for rank, (name, score) in enumerate(results, 1):
+        text += f"{rank}. {name}: {score} امتیاز\n"
+    bot.reply_to(message, text)
 
 keep_alive()
 bot.infinity_polling()
