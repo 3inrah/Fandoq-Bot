@@ -29,6 +29,8 @@ def init_db():
     conn.commit()
     conn.close()
 
+init_db()
+
 def get_user(user_id):
     conn = sqlite3.connect('quiz_bot.db', check_same_thread=False)
     c = conn.cursor()
