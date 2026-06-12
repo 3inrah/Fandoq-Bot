@@ -153,14 +153,11 @@ def finish_game(chat_id):
     c = conn.cursor()
     c.execute("SELECT name, score FROM scores WHERE chat_id=? ORDER BY score DESC LIMIT 1", (chat_id,))
     winner = c.fetchone()
-    
     if winner:
-        text = f"🏆 بازی به پایان رسید!\n\n👑 قهرمان این دور: {winner[0]} با {winner[1]} امتیاز"
+        text = f"🏆 بازی به پایان رسید!\n\n👑 قهرمان: {winner[0]} با {winner[1]} امتیاز"
     else:
         text = "🏁 بازی تمام شد!"
-        
-   bot.send_message(chat_id, text)
-    
+    bot.send_message(chat_id, text)
     c.execute("DELETE FROM scores WHERE chat_id=?", (chat_id,))
     c.execute("DELETE FROM groups WHERE chat_id=?", (chat_id,))
     conn.commit()
