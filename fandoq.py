@@ -173,39 +173,51 @@ def start_game(message):
         bot.reply_to(message, "من فقط در گروه‌ها بازی می‌کنم! برای افزودن به گروه از /start استفاده کن.")
 
 @bot.callback_query_handler(func=lambda call: call.data == 'join_lobby' or call.data.startswith('start_lobby_'))
+@bot.callback_query_handler(func=lambda call: call.data == 'join_lobby' or call.data.startswith('start_lobby_'))
 def lobby_actions(call):
     chat_id = call.message.chat.id
-    conn = sqlite3.connect('quiz_bot.db', check_same_thread=False)
+    
+    # اینجا دیتابیس حتماً باید نسخه 2 باشه
+    conn = sqlite3.connect('quiz_bot2.db', check_same_thread=False)
     c = conn.cursor()
     
     if call.data == 'join_lobby':
         user_id = call.from_user.id
-        c.execute("SELECT * FROM lobby WHERE chat_id=? AND user_id=?", (chat_id, user_id))
-        if c.fetchone():
-            bot.answer_callback_query(call.id, "تو که تو لیست هستی شیطون! 😄")
-        else:
-            c.execute("INSERT INTO lobby (chat_id, user_id, name) VALUES (?, ?, ?)", (chat_id, user_id, call.from_user.first_name))
-            conn.commit()
-            c.execute("SELECT name FROM lobby WHERE chat_id=?", (chat_id,))
-            players = c.fetchall()
-            text = "🎮 فراخوان بازی کوئیز فندق!\n\nکسانی که آماده هستن روی دکمه زیر کلیک کنن.\n\n👥 بازیکنان:\n"
-            for i, p in enumerate(players, 1):
-                text += f"{i}. {p[0]}\n"
-            bot.edit_message_text(text, chat_id, call.message.message_id, reply_markup=call.message.reply_markup)
-            bot.answer_callback_query(call.id, "به مسابقه اضافه شدی! ✅")
+        try:
+            c.execute("SELECT * FROM lobby WHERE chat_id=? AND user_id=?", (chat_id, user_id))
+            if c.fetchone():
+                bot.answer_callback_query(call.id, "تو که تو لیست هستی شیطون! 😄")
+            else:
+                c.execute("INSERT INTO lobby (chat_id, user_id, name) VALUES (?, ?, ?)", (chat_id, user_id, call.from_user.first_name))
+                conn.commit()
+                
+                c.execute("SELECT name FROM lobby WHERE chat_id=?", (chat_id,))
+                players = c.fetchall()
+                text = "🎮 فراخوان بازی کوئیز فندق!\n\nکسانی که آماده هستن روی دکمه زیر کلیک کنن.\n\n👥 بازیکنان:\n"
+                for i, p in enumerate(players, 1):
+                    text += f"{i}. {p[0]}\n"
+                
+                # جلوگیری از گیر کردن دکمه در صورت کلیک همزمان دو نفر
+                try:
+                    bot.edit_message_text(text, chat_id, call.message.message_id, reply_markup=call.message.reply_markup)
+                except:
+                    pass
+                    
+                bot.answer_callback_query(call.id, "به مسابقه اضافه شدی! ✅")
+        except Exception as e:
+            bot.answer_callback_query(call.id, "⛔️ یه مشکلی تو دیتابیس پیش اومد!")
             
     elif call.data.startswith('start_lobby_'):
         host_id = int(call.data.split('_')[2])
         if call.from_user.id != host_id:
             bot.answer_callback_query(call.id, "❌ فقط کسی که بازی رو ساخته می‌تونه شروعش کنه!", show_alert=True)
-        if call.from_user.id != host_id:
-            bot.answer_callback_query(call.id, "❌ فقط کسی که بازی رو ساخته می‌تونه شروعش کنه!", show_alert=True)
         else:
-            # ذخیره آیدی پیام فراخوان برای جدول امتیازات زنده
             c.execute("INSERT OR REPLACE INTO groups (chat_id, current_question_index, lobby_msg_id) VALUES (?, 0, ?)", (chat_id, call.message.message_id))
             conn.commit()
             
-            bot.edit_message_reply_markup(chat_id, call.message.message_id, reply_markup=None)
+            try: bot.edit_message_reply_markup(chat_id, call.message.message_id, reply_markup=None) 
+            except: pass
+            
             update_scoreboard(chat_id)
             send_question(chat_id)
             
