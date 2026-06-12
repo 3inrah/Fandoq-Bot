@@ -145,25 +145,6 @@ def show_rank(message):
         text += f"{rank}. {name}: {score} امتیاز\n"
     bot.reply_to(message, text)
 
-@bot.message_handler(commands=['rank'])
-def show_rank(message):
-    chat_id = message.chat.id
-    conn = sqlite3.connect('quiz_bot.db')
-    c = conn.cursor()
-    
-    c.execute("SELECT name, score FROM scores WHERE chat_id=? ORDER BY score DESC LIMIT 5", (chat_id,))
-    results = c.fetchall()
-    conn.close()
-    
-    if not results:
-        bot.reply_to(message, "🏆 رده‌بندی فعلی:\n\nهنوز امتیازی ثبت نشده است! بازی را با /quiz شروع کنید.")
-        return
-        
-    text = "🏆 ۵ نفر برتر این گروه:\n\n"
-    for rank, (name, score) in enumerate(results, 1):
-        text += f"{rank}. {name}: {score} امتیاز\n"
-    
-    bot.reply_to(message, text)
 def finish_game(chat_id):
     conn = sqlite3.connect('quiz_bot.db')
     c = conn.cursor()
