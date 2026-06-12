@@ -49,11 +49,8 @@ def send_question(chat_id):
     
     current_idx = (row[0] + 1) if row else 1
     
-    if current_idx > 10:  # پایان دور بازی
-        bot.send_message(chat_id, "🏁 بازی تمام شد! برای دیدن رده‌بندی از /rank استفاده کنید.")
-        c.execute("DELETE FROM groups WHERE chat_id=?", (chat_id,))
-        conn.commit()
-        conn.close()
+    if current_idx > 10:
+        finish_game(chat_id)
         return
 
     c.execute("INSERT OR REPLACE INTO groups (chat_id, current_question_index) VALUES (?, ?)", (chat_id, current_idx))
@@ -67,12 +64,14 @@ def send_question(chat_id):
     threading.Timer(15, timeout_handler, args=[chat_id, msg.message_id]).start()
 
 def timeout_handler(chat_id, message_id):
-    try:
+    conn = sqlite3.connect('quiz_bot.db')
+    c = conn.cursor()
+    c.execute("SELECT current_question_index FROM groups WHERE chat_id=?", (chat_id,))
+    if c.fetchone():
         bot.edit_message_reply_markup(chat_id, message_id, reply_markup=None)
         bot.send_message(chat_id, "⏰ زمان تمام شد! سوال بعدی...")
         send_question(chat_id)
-    except:
-        pass)
+    conn.close()
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('ans_'))
 def handle_answer(call):
@@ -145,6 +144,25 @@ def show_rank(message):
     for rank, (name, score) in enumerate(results, 1):
         text += f"{rank}. {name}: {score} امتیاز\n"
     bot.reply_to(message, text)
+
+@bot.message_handler(commands=['rank'])
+def show_rank(message):
+
+def finish_game(chat_id):
+    conn = sqlite3.connect('quiz_bot.db')
+    c = conn.cursor()
+    c.execute("SELECT name, score FROM scores WHERE chat_id=? ORDER BY score DESC LIMIT 1", (chat_id,))
+    winner = c.fetchone()
+    
+    if winner:
+        text = f"🏆 بازی به پایان رسید!\n\n👑 قهرمان این دور: {winner[0]} با {winner[1]} امتیاز"
+    else:
+        text = "🏁 بازی تمام شد!"
+        
+    bot.send_message(chat_id, text)
+    c.execute("DELETE FROM groups WHERE chat_id=?", (chat_id,))
+    conn.commit()
+    conn.close()
 
 keep_alive()
 bot.infinity_polling()
