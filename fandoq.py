@@ -84,9 +84,9 @@ def update_scoreboard(chat_id):
             elif q < current_q:
                 bar += "⬜️" 
             else:
-                bar += "⬛️" 
+                bar += "⬜️" 
                 
-        text += f"<b>{i}.</b> {name}: <code>{score}</code> امتیاز\n{bar}\n\n"
+        text += f"\u200F<b>{i}.</b> {name}: <code>{score}</code> امتیاز\n\u200F{bar}\n\n"
         
     try:
         bot.edit_message_text(text, chat_id, lobby_msg_id, parse_mode='HTML')
@@ -128,6 +128,24 @@ def send_question(chat_id):
     conn = sqlite3.connect('quiz_bot2.db', check_same_thread=False)
     c = conn.cursor()
 
+    c.execute("SELECT current_question_index FROM groups WHERE chat_id=?", (chat_id,))
+    row = c.fetchone()
+    current_idx = row[0] if row else 0
+    new_idx = current_idx + 1
+    
+    if new_idx > 10:
+        conn.close()
+        finish_game(chat_id)
+        return
+
+    c.execute("UPDATE groups SET current_question_index=? WHERE chat_id=? AND current_question_index=?", (new_idx, chat_id, current_idx))
+    
+    if c.rowcount == 0:
+        conn.close()
+        return
+        
+    conn.commit()
+
     c.execute("SELECT message_id FROM q_messages WHERE chat_id=?", (chat_id,))
     for row in c.fetchall():
         try:
@@ -135,19 +153,6 @@ def send_question(chat_id):
         except:
             pass
     c.execute("DELETE FROM q_messages WHERE chat_id=?", (chat_id,))
-    conn.commit()
-
-    c.execute("SELECT current_question_index FROM groups WHERE chat_id=?", (chat_id,))
-    row = c.fetchone()
-    
-    current_idx = (row[0] + 1) if row else 1
-    
-    if current_idx > 10:
-        conn.close()
-        finish_game(chat_id)
-        return
-
-    c.execute("INSERT OR REPLACE INTO groups (chat_id, current_question_index, lobby_msg_id) VALUES (?, ?, COALESCE((SELECT lobby_msg_id FROM groups WHERE chat_id=?), 0))", (chat_id, current_idx, chat_id))
     conn.commit()
 
     c.execute("SELECT q_index FROM asked_questions WHERE chat_id=?", (chat_id,))
@@ -169,11 +174,13 @@ def send_question(chat_id):
 
     markup = InlineKeyboardMarkup(row_width=2) 
     buttons = []
+    emojis = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣"]
     for i, option in enumerate(q_data['options']): 
-        buttons.append(InlineKeyboardButton(option, callback_data=f"ans_{i}_{q_data['correct']}"))
+        btn_text = f"{emojis[i]} {option}" if i < len(emojis) else option
+        buttons.append(InlineKeyboardButton(btn_text, callback_data=f"ans_{i}_{q_data['correct']}"))
     markup.add(*buttons)
 
-    persian_idx = str(current_idx).translate(str.maketrans('0123456789', '۰۱۲۳۴۵۶۷۸۹'))
+    persian_idx = str(new_idx).translate(str.maketrans('0123456789', '۰۱۲۳۴۵۶۷۸۹'))
 
     text = f"❓ <b>سوال {persian_idx} از ۱۰</b>\n➖➖➖➖➖➖➖➖\n<i>{q_data['question']}</i>"
     
@@ -183,7 +190,7 @@ def send_question(chat_id):
     conn.commit()
     conn.close()
 
-    threading.Timer(15.0, timeout_handler, args=[chat_id, msg.message_id, current_idx]).start()
+    threading.Timer(15.0, timeout_handler, args=[chat_id, msg.message_id, new_idx]).start()
 
 @bot.message_handler(commands=['quiz']) 
 def start_game(message):
