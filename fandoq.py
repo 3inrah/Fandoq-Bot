@@ -209,7 +209,7 @@ def start_game(message):
         conn.commit()
         conn.close()
         
-        text = f"🎮 <b>فراخوان بازی کوئیز فندق!</b>\n\nکسانی که آماده هستن روی دکمه زیر کلیک کنن.\n➖➖➖➖➖➖➖➖\n👥 <b>بازیکنان:</b>\n<b>۱.</b> {host_name}"
+        text = f"🎮 <b>فراخوان بازی کوئیز فندق!</b>\n\nکسانی که آماده هستن روی دکمه زیر کلیک کنن.\n➖➖➖➖➖➖➖➖\n👥 <b>بازیکنان:</b>\n\u200F<b>۱.</b> {host_name}"
         
         markup = InlineKeyboardMarkup()
         markup.add(InlineKeyboardButton("✋ من هستم!", callback_data="join_lobby"))
@@ -240,7 +240,7 @@ def lobby_actions(call):
                 players = c.fetchall()
                 text = "🎮 <b>فراخوان بازی کوئیز فندق!</b>\n\nکسانی که آماده هستن روی دکمه زیر کلیک کنن.\n➖➖➖➖➖➖➖➖\n👥 <b>بازیکنان:</b>\n"
                 for i, p in enumerate(players, 1):
-                    text += f"<b>{i}.</b> {p[0]}\n"
+                    text += f"\u200F<b>{i}.</b> {p[0]}\n"
                 
                 try:
                     bot.edit_message_text(text, chat_id, call.message.message_id, reply_markup=call.message.reply_markup, parse_mode='HTML')
