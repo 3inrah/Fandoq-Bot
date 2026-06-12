@@ -185,6 +185,36 @@ def send_question(chat_id):
 
     threading.Timer(15.0, timeout_handler, args=[chat_id, msg.message_id, current_idx]).start()
 
+@bot.message_handler(commands=['quiz']) 
+def start_game(message):
+    if message.chat.type in ['group', 'supergroup']:
+        chat_id = message.chat.id
+        host_id = message.from_user.id
+        host_name = message.from_user.first_name
+        
+        conn = sqlite3.connect('quiz_bot2.db', check_same_thread=False)
+        c = conn.cursor()
+        
+        c.execute("DELETE FROM lobby WHERE chat_id=?", (chat_id,))
+        c.execute("DELETE FROM scores WHERE chat_id=?", (chat_id,))
+        c.execute("DELETE FROM groups WHERE chat_id=?", (chat_id,))
+        c.execute("DELETE FROM round_answers_v2 WHERE chat_id=?", (chat_id,))
+        c.execute("DELETE FROM q_messages WHERE chat_id=?", (chat_id,))
+        
+        c.execute("INSERT INTO lobby (chat_id, user_id, name) VALUES (?, ?, ?)", (chat_id, host_id, host_name))
+        conn.commit()
+        conn.close()
+        
+        text = f"🎮 <b>فراخوان بازی کوئیز فندق!</b>\n\nکسانی که آماده هستن روی دکمه زیر کلیک کنن.\n➖➖➖➖➖➖➖➖\n👥 <b>بازیکنان:</b>\n<b>۱.</b> {host_name}"
+        
+        markup = InlineKeyboardMarkup()
+        markup.add(InlineKeyboardButton("✋ من هستم!", callback_data="join_lobby"))
+        markup.add(InlineKeyboardButton("🚀 شروع مسابقه", callback_data=f"start_lobby_{host_id}"))
+        
+        bot.send_message(chat_id, text, reply_markup=markup, parse_mode='HTML')
+    else:
+        bot.reply_to(message, "من فقط در گروه‌ها بازی می‌کنم! برای افزودن به گروه از /start استفاده کن.")
+
 @bot.callback_query_handler(func=lambda call: call.data == 'join_lobby' or call.data.startswith('start_lobby_'))
 def lobby_actions(call):
     chat_id = call.message.chat.id
