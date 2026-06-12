@@ -16,7 +16,7 @@ def load_questions():
 QUESTIONS = load_questions()
 
 def init_db():
-    conn = sqlite3.connect('quiz_bot.db')
+    conn = sqlite3.connect('quiz_bot.db', check_same_thread=False)
     c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS groups
              (chat_id INTEGER PRIMARY KEY, current_question_index INTEGER, total_questions INTEGER)''')
@@ -26,7 +26,7 @@ def init_db():
 init_db()
 
 def get_user(user_id):
-    conn = sqlite3.connect('quiz_bot.db')
+    conn = sqlite3.connect('quiz_bot.db', check_same_thread=False)
     c = conn.cursor()
     c.execute("SELECT score, current_q FROM users WHERE user_id=?", (user_id,))
     result = c.fetchone()
@@ -34,7 +34,7 @@ def get_user(user_id):
     return result
 
 def update_user(user_id, score, current_q):
-    conn = sqlite3.connect('quiz_bot.db')
+    conn = sqlite3.connect('quiz_bot.db', check_same_thread=False)
     c = conn.cursor()
     c.execute("INSERT OR REPLACE INTO users (user_id, score, current_q) VALUES (?, ?, ?)", 
               (user_id, score, current_q))
@@ -42,7 +42,7 @@ def update_user(user_id, score, current_q):
     conn.close()
 
 def send_question(chat_id):
-    conn = sqlite3.connect('quiz_bot.db')
+    conn = sqlite3.connect('quiz_bot.db', check_same_thread=False)
     c = conn.cursor()
     c.execute("SELECT current_question_index FROM groups WHERE chat_id=?", (chat_id,))
     row = c.fetchone()
@@ -68,7 +68,7 @@ def send_question(chat_id):
     threading.Timer(15, timeout_handler, args=[chat_id, msg.message_id]).start()
 
 def timeout_handler(chat_id, message_id):
-    conn = sqlite3.connect('quiz_bot.db')
+    conn = sqlite3.connect('quiz_bot.db', check_same_thread=False)
     c = conn.cursor()
     c.execute("SELECT current_question_index FROM groups WHERE chat_id=?", (chat_id,))
     if c.fetchone():
@@ -88,7 +88,7 @@ def handle_answer(call):
     user_name = call.from_user.first_name
     
     if selected == correct:
-        conn = sqlite3.connect('quiz_bot.db')
+        conn = sqlite3.connect('quiz_bot.db', check_same_thread=False)
         c = conn.cursor()
         c.execute("INSERT OR REPLACE INTO scores (chat_id, user_id, name, score) VALUES (?, ?, ?, COALESCE((SELECT score FROM scores WHERE chat_id=? AND user_id=?), 0) + 10)", 
                   (chat_id, user_id, user_name, chat_id, user_id))
@@ -134,7 +134,7 @@ def start_game(message):
 @bot.message_handler(commands=['rank'])
 def show_rank(message):
     chat_id = message.chat.id
-    conn = sqlite3.connect('quiz_bot.db')
+    conn = sqlite3.connect('quiz_bot.db', check_same_thread=False)
     c = conn.cursor()
     c.execute("SELECT name, score FROM scores WHERE chat_id=? ORDER BY score DESC LIMIT 5", (chat_id,))
     results = c.fetchall()
@@ -150,7 +150,7 @@ def show_rank(message):
     bot.reply_to(message, text)
 
 def finish_game(chat_id):
-    conn = sqlite3.connect('quiz_bot.db')
+    conn = sqlite3.connect('quiz_bot.db', check_same_thread=False)
     c = conn.cursor()
     c.execute("SELECT name, score FROM scores WHERE chat_id=? ORDER BY score DESC LIMIT 1", (chat_id,))
     winner = c.fetchone()
