@@ -160,10 +160,20 @@ def handle_answer(call):
         conn.close()
         return
 
-    # بررسی درست یا غلط بودن جواب
+  # بررسی درست یا غلط بودن جواب
     if int(parts[1]) == int(parts[2]):
-        c.execute("INSERT OR REPLACE INTO scores (chat_id, user_id, name, score) VALUES (?, ?, ?, COALESCE((SELECT score FROM scores WHERE chat_id=? AND user_id=?), 0) + 10)", 
-                  (chat_id, user_id, call.from_user.first_name, chat_id, user_id))
+        # گرفتن امتیاز فعلی کاربر از دیتابیس
+        c.execute("SELECT score FROM scores WHERE chat_id=? AND user_id=?", (chat_id, user_id))
+        row = c.fetchone()
+        
+        if row:
+            # اگه قبلاً امتیاز گرفته، ۱۰ تا به امتیاز قبلیش اضافه کن
+            new_score = row[0] + 10
+            c.execute("UPDATE scores SET score=? WHERE chat_id=? AND user_id=?", (new_score, chat_id, user_id))
+        else:
+            # اگه اولین بارشه که تو این دور درست جواب میده، همون ۱۰ رو ثبت کن
+            c.execute("INSERT INTO scores (chat_id, user_id, name, score) VALUES (?, ?, ?, 10)", (chat_id, user_id, call.from_user.first_name))
+            
         conn.commit()
         bot.answer_callback_query(call.id, "✅ ایول! درست بود.")
         bot.send_message(chat_id, f"🎉 {call.from_user.first_name} زودتر از همه جواب درست رو داد (+۱۰ امتیاز)")
