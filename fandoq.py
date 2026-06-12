@@ -164,5 +164,7 @@ def finish_game(chat_id):
     conn.commit()
     conn.close()
 
+bot.remove_webhook()
+
 keep_alive()
 bot.infinity_polling()
