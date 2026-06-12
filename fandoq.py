@@ -185,68 +185,6 @@ def send_question(chat_id):
 
     threading.Timer(15.0, timeout_handler, args=[chat_id, msg.message_id, current_idx]).start()
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith('ans_'))
-def handle_answer(call):
-    parts = call.data.split('_')
-    chat_id = call.message.chat.id
-    message_id = call.message.message_id
-    user_id = call.from_user.id
-    
-    conn = sqlite3.connect('quiz_bot2.db', check_same_thread=False)
-    c = conn.cursor()
-
-    c.execute("SELECT * FROM lobby WHERE chat_id=? AND user_id=?", (chat_id, user_id))
-    if not c.fetchone():
-        bot.answer_callback_query(call.id, "⛔️ شما تو بازی ثبت‌نام نکردی! تماشاچی باش.", show_alert=True)
-        conn.close()
-        return
-
-    c.execute("SELECT current_question_index FROM groups WHERE chat_id=?", (chat_id,))
-    current_q_idx_row = c.fetchone()
-    if not current_q_idx_row:
-        conn.close()
-        return
-    current_q_idx = current_q_idx_row[0]
-
-    # تغییر به جدول V2
-    c.execute("SELECT * FROM round_answers_v2 WHERE chat_id=? AND user_id=? AND q_index=?", (chat_id, user_id, current_q_idx))
-    if c.fetchone():
-        bot.answer_callback_query(call.id, "قبلاً جواب دادی! ⏳ صبر کن بقیه هم جواب بدن.")
-        conn.close()
-        return
-
-    is_correct = 1 if int(parts[1]) == int(parts[2]) else 0
-    c.execute("INSERT INTO round_answers_v2 (chat_id, user_id, q_index, is_correct) VALUES (?, ?, ?, ?)", (chat_id, user_id, current_q_idx, is_correct))
-
-    if is_correct:
-        bot.answer_callback_query(call.id, "✅ آفرین! درست بود (+۱۰ امتیاز)")
-        c.execute("SELECT score FROM scores WHERE chat_id=? AND user_id=?", (chat_id, user_id))
-        row = c.fetchone()
-        if row:
-            c.execute("UPDATE scores SET score=? WHERE chat_id=? AND user_id=?", (row[0] + 10, chat_id, user_id))
-        else:
-            c.execute("INSERT INTO scores (chat_id, user_id, name, score) VALUES (?, ?, ?, 10)", (chat_id, user_id, call.from_user.first_name))
-    else:
-        bot.answer_callback_query(call.id, "❌ متاسفانه غلط بود!")
-
-    conn.commit()
-    
-    update_scoreboard(chat_id)
-
-    c.execute("SELECT COUNT(*) FROM lobby WHERE chat_id=?", (chat_id,))
-    total_players = c.fetchone()[0]
-
-    c.execute("SELECT COUNT(*) FROM round_answers_v2 WHERE chat_id=? AND q_index=?", (chat_id, current_q_idx))
-    answered_players = c.fetchone()[0]
-
-    if answered_players >= total_players:
-        try: bot.edit_message_reply_markup(chat_id, message_id, reply_markup=None) 
-        except: pass
-        conn.close()
-        send_question(chat_id)
-    else:
-        conn.close()
-
 @bot.callback_query_handler(func=lambda call: call.data == 'join_lobby' or call.data.startswith('start_lobby_'))
 def lobby_actions(call):
     chat_id = call.message.chat.id
@@ -318,7 +256,6 @@ def handle_answer(call):
         return
     current_q_idx = current_q_idx_row[0]
 
-    # تغییر به جدول V2
     c.execute("SELECT * FROM round_answers_v2 WHERE chat_id=? AND user_id=? AND q_index=?", (chat_id, user_id, current_q_idx))
     if c.fetchone():
         bot.answer_callback_query(call.id, "قبلاً جواب دادی! ⏳ صبر کن بقیه هم جواب بدن.")
