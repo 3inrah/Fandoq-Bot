@@ -205,8 +205,8 @@ def lobby_actions(call):
                 c.execute("SELECT name FROM lobby WHERE chat_id=?", (chat_id,))
                 players = c.fetchall()
                 text = "🎮 <b>فراخوان بازی کوئیز فندق!</b>\n\nکسانی که آماده هستن روی دکمه زیر کلیک کنن.\n➖➖➖➖➖➖➖➖\n👥 <b>بازیکنان:</b>\n"
-            for i, p in enumerate(players, 1):
-                text += f"<b>{i}.</b> {p[0]}\n"
+                for i, p in enumerate(players, 1):
+                    text += f"<b>{i}.</b> {p[0]}\n"
                 
                 try:
                     bot.edit_message_text(text, chat_id, call.message.message_id, reply_markup=call.message.reply_markup, parse_mode='HTML')
