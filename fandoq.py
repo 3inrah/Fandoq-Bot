@@ -4,7 +4,20 @@ import json
 import random
 import sqlite3
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
-from keep_alive import keep_alive
+from flask import Flask
+
+# تنظیمات سرور برای Render
+app = Flask('')
+@app.route('/')
+def home():
+    return "Bot is Alive!"
+
+def run_server():
+    app.run(host='0.0.0.0', port=8080)
+
+def keep_alive():
+    t = threading.Thread(target=run_server)
+    t.start()
 
 TOKEN = '8987719269:AAGXwnmftbLA0evqHvjd32A7ktkmFbA5Uz4'
 bot = telebot.TeleBot(TOKEN)
