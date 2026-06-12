@@ -60,7 +60,7 @@ def send_question(chat_id):
     q_data = random.choice(QUESTIONS)
     markup = InlineKeyboardMarkup() # اضافه کردن این خط
     for i, option in enumerate(q_data['options']): # تعریف دکمه‌ها بر اساس سوال
-        markup.add(InlineKeyboardButton(option, callback_data=f"ans_{i}_{q_data['answer']}"))
+        markup.add(InlineKeyboardButton(option, callback_data=f"ans_{i}_{q_data['correct']}"))
 
     # 👇 این همون خطیه که جا انداختی! حتماً باید باشه تا سوال فرستاده بشه
     msg = bot.send_message(chat_id, f"❓ سوال {current_idx} از ۱۰:\n{q_data['question']}", reply_markup=markup)
